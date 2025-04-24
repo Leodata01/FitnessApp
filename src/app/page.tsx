@@ -1,7 +1,10 @@
-import React from "react";
+import { SignInButton } from "@clerk/nextjs";
 
 const HomePage = () => {
-  return <div>page</div>;
+  return;
+  <div>
+    <SignInButton> Sign In</SignInButton>
+  </div>;
 };
 
 export default HomePage;
