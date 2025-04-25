@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Button } from "./components/ui/button";
 import { ArrowRightIcon } from "lucide-react";
+import TerminalOverlay from "./components/TerminalOverlay";
+import UserPrograms from "./components/UserPrograms";
 
 const HomePage = () => {
   return (
@@ -99,12 +101,19 @@ const HomePage = () => {
 
                   {/* SCAN LINE */}
                   <div className="absolute inset-0 bg-[linear-gradient(transparent_0%,transparent_calc(50%-1px),var(--cyber-glow-primary)_50%,transparent_calc(50%+1px),transparent_100%)] bg-[length:100%_8px] animate-scanline pointer-events-none" />
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
                 </div>
+
+                {/*TERMINAL OVERLAY*/}
+                <TerminalOverlay />
               </div>
             </div>
           </div>
         </div>
       </section>
+
+      <UserPrograms />
     </div>
   );
 };
