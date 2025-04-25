@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { ZapIcon, HomeIcon, DumbbellIcon, UserIcon } from "lucide-react";
 import { Button } from "./ui/button";
@@ -55,9 +55,25 @@ export const Navbar = () => {
               >
                 <Link href="/generate-program">Get Started</Link>
               </Button>
+
+              <UserButton />
             </>
           ) : (
-            <> hello</>
+            <>
+              <SignInButton>
+                <Button
+                  variant={"outline"}
+                  className="border-primary/50 text-primary hover:text-white hover:bg-primary/10"
+                >
+                  Sign In
+                </Button>
+              </SignInButton>
+              <SignUpButton>
+                <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  Sign Up
+                </Button>
+              </SignUpButton>
+            </>
           )}
         </nav>
       </div>
