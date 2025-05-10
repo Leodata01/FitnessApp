@@ -1,8 +1,8 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { Webhook } from "svix";
 import { api } from "./_generated/api";
+import { httpAction } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const http = httpRouter();
@@ -12,22 +12,23 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 http.route({
   path: "/clerk-webhook",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
+  handler: httpAction(async (ctx, request) => {
     const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      console.error("CLERK_WEBHOOK_SECRET is not set");
-      return new Response("Webhook configuration error", { status: 500 });
+      throw new Error("Missing CLERK_WEBHOOK_SECRET environment variable");
     }
 
-    const svix_id = req.headers.get("svix-id");
-    const svix_signature = req.headers.get("svix-signature");
-    const svix_timestamp = req.headers.get("svix-timestamp");
+    const svix_id = request.headers.get("svix-id");
+    const svix_signature = request.headers.get("svix-signature");
+    const svix_timestamp = request.headers.get("svix-timestamp");
 
     if (!svix_id || !svix_signature || !svix_timestamp) {
-      return new Response("Missing svix headers", { status: 400 });
+      return new Response("No svix headers found", {
+        status: 400,
+      });
     }
 
-    const payload = await req.json();
+    const payload = await request.json();
     const body = JSON.stringify(payload);
 
     const wh = new Webhook(webhookSecret);
@@ -36,29 +37,23 @@ http.route({
     try {
       evt = wh.verify(body, {
         "svix-id": svix_id,
-        "svix-signature": svix_signature,
         "svix-timestamp": svix_timestamp,
+        "svix-signature": svix_signature,
       }) as WebhookEvent;
     } catch (err) {
       console.error("Error verifying webhook:", err);
-      return new Response("Invalid svix headers", { status: 400 });
+      return new Response("Error occurred", { status: 400 });
     }
 
     const eventType = evt.type;
 
     if (eventType === "user.created") {
-      const { id, first_name, last_name, email_addresses, image_url } =
+      const { id, first_name, last_name, image_url, email_addresses } =
         evt.data;
 
-      if (!email_addresses || email_addresses.length === 0) {
-        console.error("User created event missing email address:", evt.data);
-        return new Response("Missing email address in user data", {
-          status: 400,
-        });
-      }
-
       const email = email_addresses[0].email_address;
-      const name = `${first_name || ""} ${last_name || ""}`.trim() || email;
+
+      const name = `${first_name || ""} ${last_name || ""}`.trim();
 
       try {
         await ctx.runMutation(api.users.syncUser, {
@@ -67,18 +62,70 @@ http.route({
           image: image_url,
           clerkId: id,
         });
-        console.log(`Synced user: ${id}, Email: ${email}`);
       } catch (error) {
-        console.error("Error syncing user:", error);
-        return new Response("Failed to sync user", { status: 500 });
+        console.log("Error creating user:", error);
+        return new Response("Error creating user", { status: 500 });
       }
-    } else {
-      console.log(`Received webhook event: ${eventType}`);
     }
 
-    return new Response("Webhook received", { status: 200 });
+    if (eventType === "user.updated") {
+      const { id, email_addresses, first_name, last_name, image_url } =
+        evt.data;
+
+      const email = email_addresses[0].email_address;
+      const name = `${first_name || ""} ${last_name || ""}`.trim();
+
+      try {
+        await ctx.runMutation(api.users.updateUser, {
+          clerkId: id,
+          email,
+          name,
+          image: image_url,
+        });
+      } catch (error) {
+        console.log("Error updating user:", error);
+        return new Response("Error updating user", { status: 500 });
+      }
+    }
+
+    return new Response("Webhooks processed successfully", { status: 200 });
   }),
 });
+
+// validate and fix workout plan to ensure it has proper numeric types
+function validateWorkoutPlan(plan: any) {
+  const validatedPlan = {
+    schedule: plan.schedule,
+    exercises: plan.exercises.map((exercise: any) => ({
+      day: exercise.day,
+      routines: exercise.routines.map((routine: any) => ({
+        name: routine.name,
+        sets:
+          typeof routine.sets === "number"
+            ? routine.sets
+            : parseInt(routine.sets) || 1,
+        reps:
+          typeof routine.reps === "number"
+            ? routine.reps
+            : parseInt(routine.reps) || 10,
+      })),
+    })),
+  };
+  return validatedPlan;
+}
+
+// validate diet plan to ensure it strictly follows schema
+function validateDietPlan(plan: any) {
+  // only keep the fields we want
+  const validatedPlan = {
+    dailyCalories: plan.dailyCalories,
+    meals: plan.meals.map((meal: any) => ({
+      name: meal.name,
+      foods: meal.foods,
+    })),
+  };
+  return validatedPlan;
+}
 
 http.route({
   path: "/vapi/generate-program",
@@ -153,14 +200,9 @@ http.route({
       
       DO NOT add any fields that are not in this example. Your response must be a valid JSON object with no additional text.`;
 
-      console.log("Prompt entraînement:", workoutPrompt);
-
       const workoutResult = await model.generateContent(workoutPrompt);
-      console.log("Réponse brute Gemini entraînement:", workoutResult);
-      const workoutPlanText = await workoutResult.response.text();
-      console.log("Texte brut entraînement:", workoutPlanText);
+      const workoutPlanText = workoutResult.response.text();
 
-      console.log("Tentative de parsing JSON entraînement");
       // VALIDATE THE INPUT COMING FROM AI
       let workoutPlan = JSON.parse(workoutPlanText);
       workoutPlan = validateWorkoutPlan(workoutPlan);
@@ -202,25 +244,14 @@ http.route({
         
         DO NOT add any fields that are not in this example. Your response must be a valid JSON object with no additional text.`;
 
-      console.log("Prompt nutrition:", dietPrompt);
-
       const dietResult = await model.generateContent(dietPrompt);
-      console.log("Réponse brute Gemini nutrition:", dietResult);
-      const dietPlanText = await dietResult.response.text();
-      console.log("Texte brut nutrition:", dietPlanText);
+      const dietPlanText = dietResult.response.text();
 
-      console.log("Tentative de parsing JSON nutrition");
       // VALIDATE THE INPUT COMING FROM AI
       let dietPlan = JSON.parse(dietPlanText);
       dietPlan = validateDietPlan(dietPlan);
 
       // save to our DB: CONVEX
-      console.log("Enregistrement dans la DB avec:", {
-        userId: user_id,
-        dietPlan,
-        workoutPlan,
-        name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
-      });
       const planId = await ctx.runMutation(api.plans.createPlan, {
         userId: user_id,
         dietPlan,
@@ -228,8 +259,6 @@ http.route({
         workoutPlan,
         name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
       });
-
-      console.log("Plan généré avec succès. ID:", planId);
 
       return new Response(
         JSON.stringify({
@@ -260,15 +289,5 @@ http.route({
     }
   }),
 });
-
-function validateWorkoutPlan(plan: unknown): unknown {
-  // TODO: Implémente une vraie validation si besoin
-  return plan;
-}
-
-function validateDietPlan(plan: unknown): unknown {
-  // TODO: Implémente une vraie validation si besoin
-  return plan;
-}
 
 export default http;

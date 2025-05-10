@@ -24,9 +24,18 @@ import {
 
 const ProfilePage = () => {
   const { user } = useUser();
-  const userId = user?.id as string;
 
-  const allPlans = useQuery(api.plans.getUserPlans, { userId });
+  // Récupérer l'utilisateur Convex à partir de l'ID Clerk
+  const userQuery = useQuery(api.users.getUserByClerkId, {
+    clerkId: user?.id ?? "",
+  });
+
+  // Récupérer les plans seulement si on a un utilisateur Convex
+  const allPlans = useQuery(
+    api.plans.getUserPlans,
+    userQuery?._id ? { userId: userQuery._id } : "skip"
+  );
+
   const [selectedPlanId, setSelectedPlanId] = useState<null | string>(null);
 
   const activePlan = allPlans?.find((plan) => plan.isActive);
