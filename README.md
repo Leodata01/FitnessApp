@@ -13,6 +13,7 @@ This project is a web application that leverages AI to generate personalized wor
 - **Authentication**: [Clerk](https://clerk.com/)
 - **AI**: [Google Gemini](https://ai.google.dev/)
 - **Styling**: [shadcn/ui](https://ui.shadcn.com/) (UI Components)
+- **Voice Agent**: [Vapi](https://vapi.ai/) (AI Voice Conversations API)
 
 ## Prerequisites
 
