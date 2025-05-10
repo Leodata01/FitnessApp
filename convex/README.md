@@ -1,90 +1,109 @@
-# Welcome to your Convex functions directory!
+# Convex Functions
 
-Write your Convex functions here.
-See https://docs.convex.dev/functions for more.
+This directory contains your Convex backend functions.
+Refer to the [Convex Functions Documentation](https://docs.convex.dev/functions) for more details.
 
-A query function that takes two arguments looks like:
+## Query Functions
 
-```ts
-// functions.js
+A query function typically retrieves data. Here's an example structure:
+
+```typescript
+// functions.ts
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 
-export const myQueryFunction = query({
-  // Validators for arguments.
+export const getSomeData = query({
+  // Define arguments and their types (validators)
   args: {
-    first: v.number(),
-    second: v.string(),
+    id: v.id("tableName"), // Example: expecting an ID for 'tableName'
+    filterValue: v.optional(v.string()), // Example: an optional string filter
   },
 
-  // Function implementation.
+  // The function's logic
   handler: async (ctx, args) => {
-    // Read the database as many times as you need here.
-    // See https://docs.convex.dev/database/reading-data.
-    const documents = await ctx.db.query("tablename").collect();
+    // Access the database
+    // See: https://docs.convex.dev/database/reading-data
+    const documents = await ctx.db
+      .query("tableName")
+      .filter((q) => q.eq(q.field("someField"), args.filterValue)) // Example filter
+      .collect();
 
-    // Arguments passed from the client are properties of the args object.
-    console.log(args.first, args.second);
-
-    // Write arbitrary JavaScript here: filter, aggregate, build derived data,
-    // remove non-public properties, or create new objects.
+    // Process and return data
     return documents;
   },
 });
 ```
 
-Using this query function in a React component looks like:
+To use this query in a React component:
 
-```ts
-const data = useQuery(api.functions.myQueryFunction, {
-  first: 10,
-  second: "hello",
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api"; // Adjust path as needed
+
+// ... inside your component
+const data = useQuery(api.functions.getSomeData, {
+  id: "yourDocumentId",
+  filterValue: "someFilter",
 });
 ```
 
-A mutation function looks like:
+## Mutation Functions
 
-```ts
-// functions.js
+A mutation function modifies data in the database. Example:
+
+```typescript
+// functions.ts
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 
-export const myMutationFunction = mutation({
-  // Validators for arguments.
+export const createSomeData = mutation({
+  // Define arguments and their types
   args: {
-    first: v.string(),
-    second: v.string(),
+    title: v.string(),
+    value: v.number(),
   },
 
-  // Function implementation.
+  // The function's logic
   handler: async (ctx, args) => {
-    // Insert or modify documents in the database here.
-    // Mutations can also read from the database like queries.
-    // See https://docs.convex.dev/database/writing-data.
-    const message = { body: args.first, author: args.second };
-    const id = await ctx.db.insert("messages", message);
+    // Interact with the database
+    // See: https://docs.convex.dev/database/writing-data
+    const newItem = {
+      title: args.title,
+      value: args.value,
+      createdAt: Date.now(),
+    };
+    const itemId = await ctx.db.insert("tableName", newItem);
 
-    // Optionally, return a value from your mutation.
-    return await ctx.db.get(id);
+    // Optionally, return a result
+    return itemId;
   },
 });
 ```
 
-Using this mutation function in a React component looks like:
+To use this mutation in a React component:
 
-```ts
-const mutation = useMutation(api.functions.myMutationFunction);
-function handleButtonPress() {
-  // fire and forget, the most common way to use mutations
-  mutation({ first: "Hello!", second: "me" });
-  // OR
-  // use the result once the mutation has completed
-  mutation({ first: "Hello!", second: "me" }).then((result) =>
-    console.log(result),
-  );
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api"; // Adjust path as needed
+
+// ... inside your component
+const createItem = useMutation(api.functions.createSomeData);
+
+async function handleCreate() {
+  try {
+    const itemId = await createItem({ title: "New Item", value: 100 });
+    console.log("Created item with ID:", itemId);
+  } catch (error) {
+    console.error("Mutation failed:", error);
+  }
 }
 ```
 
-Use the Convex CLI to push your functions to a deployment. See everything
-the Convex CLI can do by running `npx convex -h` in your project root
-directory. To learn more, launch the docs with `npx convex docs`.
+## Convex CLI
+
+Use the Convex CLI to manage your backend functions and deployments.
+
+- Push functions: `npx convex deploy`
+- Run a development server: `npx convex dev`
+- View all commands: `npx convex -h`
+- Open documentation: `npx convex docs`

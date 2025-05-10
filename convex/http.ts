@@ -5,19 +5,25 @@ import { api } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// Initialize the HTTP router
 const http = httpRouter();
 
+// Initialize the Google Generative AI client with the API key from environment variables
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// Define an HTTP route to handle Clerk webhooks
 http.route({
-  path: "/clerk-webhook",
-  method: "POST",
+  path: "/clerk-webhook", // The path for the webhook
+  method: "POST", // The HTTP method expected
+  // The handler function for the webhook
   handler: httpAction(async (ctx, request) => {
+    // Retrieve the webhook secret from environment variables
     const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
     if (!webhookSecret) {
       throw new Error("Missing CLERK_WEBHOOK_SECRET environment variable");
     }
 
+    // Extract Svix headers for webhook verification
     const svix_id = request.headers.get("svix-id");
     const svix_signature = request.headers.get("svix-signature");
     const svix_timestamp = request.headers.get("svix-timestamp");
@@ -28,13 +34,16 @@ http.route({
       });
     }
 
+    // Parse the JSON payload from the request
     const payload = await request.json();
     const body = JSON.stringify(payload);
 
+    // Create a new Webhook instance with the secret for verification
     const wh = new Webhook(webhookSecret);
     let evt: WebhookEvent;
 
     try {
+      // Verify the webhook signature and payload
       evt = wh.verify(body, {
         "svix-id": svix_id,
         "svix-timestamp": svix_timestamp,
@@ -47,6 +56,7 @@ http.route({
 
     const eventType = evt.type;
 
+    // Handle 'user.created' event: sync new user to Convex database
     if (eventType === "user.created") {
       const { id, first_name, last_name, image_url, email_addresses } =
         evt.data;
@@ -60,7 +70,7 @@ http.route({
           email,
           name,
           image: image_url,
-          clerkId: id,
+          clerkId: id, // Pass the Clerk user ID
         });
       } catch (error) {
         console.log("Error creating user:", error);
@@ -68,6 +78,7 @@ http.route({
       }
     }
 
+    // Handle 'user.updated' event: update existing user in Convex database
     if (eventType === "user.updated") {
       const { id, email_addresses, first_name, last_name, image_url } =
         evt.data;
@@ -77,7 +88,7 @@ http.route({
 
       try {
         await ctx.runMutation(api.users.updateUser, {
-          clerkId: id,
+          clerkId: id, // Clerk ID of the user to update
           email,
           name,
           image: image_url,
@@ -88,6 +99,7 @@ http.route({
       }
     }
 
+    // Respond with success if the webhook is processed
     return new Response("Webhooks processed successfully", { status: 200 });
   }),
 });
@@ -127,9 +139,11 @@ function validateDietPlan(plan: any) {
   return validatedPlan;
 }
 
+// Define an HTTP route to generate workout and diet programs using AI
 http.route({
-  path: "/vapi/generate-program",
-  method: "POST",
+  path: "/vapi/generate-program", // The path for the program generation endpoint
+  method: "POST", // The HTTP method expected
+  // The handler function for program generation
   handler: httpAction(async (ctx, request) => {
     try {
       const payload = await request.json();
@@ -148,15 +162,17 @@ http.route({
 
       console.log("Payload is here:", payload);
 
+      // Configure the generative AI model
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash-001",
+        model: "gemini-2.0-flash-001", // Specify the AI model
         generationConfig: {
-          temperature: 0.4, // lower temperature for more predictable outputs
-          topP: 0.9,
-          responseMimeType: "application/json",
+          temperature: 0.4, // Lower temperature for more predictable and less creative outputs
+          topP: 0.9, // Nucleus sampling parameter
+          responseMimeType: "application/json", // Expect JSON response from the AI
         },
       });
 
+      // Prompt for generating the workout plan
       const workoutPrompt = `You are an experienced fitness coach creating a personalized workout plan based on:
       Age: ${age}
       Height: ${height}
@@ -205,8 +221,9 @@ http.route({
 
       // VALIDATE THE INPUT COMING FROM AI
       let workoutPlan = JSON.parse(workoutPlanText);
-      workoutPlan = validateWorkoutPlan(workoutPlan);
+      workoutPlan = validateWorkoutPlan(workoutPlan); // Validate and sanitize the workout plan structure
 
+      // Prompt for generating the diet plan
       const dietPrompt = `You are an experienced nutrition coach creating a personalized diet plan based on:
         Age: ${age}
         Height: ${height}
@@ -249,17 +266,18 @@ http.route({
 
       // VALIDATE THE INPUT COMING FROM AI
       let dietPlan = JSON.parse(dietPlanText);
-      dietPlan = validateDietPlan(dietPlan);
+      dietPlan = validateDietPlan(dietPlan); // Validate and sanitize the diet plan structure
 
-      // save to our DB: CONVEX
+      // Save the generated and validated plans to the Convex database
       const planId = await ctx.runMutation(api.plans.createPlan, {
-        userId: user_id,
-        dietPlan,
-        isActive: true,
-        workoutPlan,
-        name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
+        userId: user_id, // The Clerk user ID
+        dietPlan, // The generated and validated diet plan
+        isActive: true, // Set the new plan as active
+        workoutPlan, // The generated and validated workout plan
+        name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`, // Generate a name for the plan
       });
 
+      // Return a success response with the plan details
       return new Response(
         JSON.stringify({
           success: true,
@@ -275,7 +293,9 @@ http.route({
         }
       );
     } catch (error) {
+      // Log any errors during the process
       console.error("Error generating fitness plan:", error);
+      // Return an error response
       return new Response(
         JSON.stringify({
           success: false,
@@ -290,4 +310,5 @@ http.route({
   }),
 });
 
+// Export the HTTP router to be used by Convex
 export default http;
